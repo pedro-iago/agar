@@ -25,7 +25,7 @@
 
 (defn new-game []
   (let [size [game-size game-size]
-        ai# 25
+        ai# 20
         ai-diameter (repeatedly ai# #(+ (rand 12) 10))
         ai-position (repeatedly ai# #(mapv rand size))
         ai-color (repeatedly ai# #(mapv rand [255 255 255]))]
@@ -41,7 +41,7 @@
              (repeat (:count game) {})
              (dissoc game :state :count)))
 
-(defn compare-cell [px dx py dy] ;todo: reuse error matrix
+(defn compare-cell [px dx py dy] ;todo: use distance-matrix
   (let [distance² (m/magnitude-squared (- px py))
         metrics (* (- dy dx) (+ dy dx) 0.25)]
     (cond
@@ -49,33 +49,35 @@
       (> (- metrics) distance²) (* dy growth)
       :else 0)))
 
-(defn comparison-matrix [{p :position d :diameter n :count}] ;slow, bugs
+(defn growth-matrix [{p :position d :diameter n :count}] ;slow
   (m/compute-matrix [n n] #(compare-cell (p %1) (d %1) (p %2) (d %2))))
 
-(defn error-matrix [{p :position d :diameter n :count}] ;slow (neat)
-  (m/compute-matrix [n n] #(* (- (p %2) (p %1)) (- (d %1) (d %2)))))
+(defn error-matrix [{p :position d :diameter n :count}] ;slow
+  (m/compute-matrix [n n]
+    #(let [Δ (- (p %2) (p %1)) Δ² (m/magnitude-squared Δ)]
+      (* (d %2) (/ Δ (+ Δ² 1)) (- (d %1) (d %2))))))
 
-(defn lnz [v1 v2] ;wtf
-  (if (and (< (m/magnitude v2) (m/magnitude v1)) (> (m/magnitude v2) 0)) v2 v1))
+(defn check [{d :diameter :as new} {vo :versor :as old}] ;tied: step
+  (-> new
+      ;assure rotation
+      (assoc-in [:versor 0] (vo 0))
+      ;walls
+      (update :position m/clamp 0 game-size)
+      ;state management
+      (cond-> (<= (d 0) 0) (assoc :state ::game-over))))
 
-(defn closest-food [{d :diameter :as game}] ;bugs
-  (mapv (fn [r] (m/normalise (reduce lnz (map * d r)))) (error-matrix game)))
-
-(defn game-check [{:keys [diameter] :as game}] ;order matters
-  (cond-> game (<= (diameter 0) 0) (assoc :state ::game-over)))
-
-(defn step [{:keys [state position diameter versor] :as game}] ;frame dependent!
+(defn step [{:keys [state position diameter versor] :as game}] ;frame
   (if (isa? state ::active)
     (-> game
-      ;training
-      ;ai-rotates
-      (update :versor #(assoc %2 0 (nth %1 0)) (closest-food game))
-      ;movement
-      (update :position + (mapv * (/ speed (+ diameter 1)) versor))
-      (update :position m/clamp 0 game-size)
-      ;resize
-      (update :diameter + (mapv #(reduce + %) (comparison-matrix game)))
-      game-check)
+        ;training
+        ;ai-rotates
+        (assoc :versor (mapv #(m/normalise (reduce + %)) (error-matrix game)))
+        ;movement
+        (update :position + (mapv * (/ speed (+ diameter 1)) versor))
+        ;resize
+        (update :diameter + (mapv m/esum (growth-matrix game)))
+        ;validate
+        (check game))
     game))
 
 (defn cell! [{[x y] :position d :diameter c :color}]
