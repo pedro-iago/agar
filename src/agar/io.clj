@@ -24,6 +24,8 @@
 (def ^:const screen-center (/ [screen-width screen-height] 2))
 (def ^:const speed 50)
 (def ^:const growth (/ 5))
+(def ^:const quad-level 4)
+(def ^:const quad-size (/ game-size (m/pow 4 quad-level)))
 
 (defn new-game []
   (let [size [game-size game-size]
@@ -43,7 +45,16 @@
 (defn soa->aos [game] ;https://www.youtube.com/watch?v=ZHqFrNyLlpA
   (reduce-kv #(mapv (fn [struct value] (assoc struct %2 value)) %1 %3)
              (repeat (:count game) {})
-             (dissoc game :state :count :zoom)))
+             (dissoc game :state :count :zoom :viewpoint)))
+
+(defn quad3 [{:keys [position diameter]}]
+  (let [extremety (mapcat #(list (update %1 0 + %2)
+                                 (update %1 1 + %2)
+                                 (update %1 0 - %2)
+                                 (update %1 1 - %2))
+                          position (/ diameter 2))
+        quads-ext (m/ceil (/ (vec extremety) quad-size))]
+    (reduce-kv #(update %1 %3 conj (quot %2 4)) {} quads-ext)))
 
 (defn growth-matrix [{:keys [position diameter count]}]
   (m/compute-matrix [count count]
