@@ -31,6 +31,7 @@
         ai-color (repeatedly ai-count #(mapv rand [255 255 255]))]
     {:state ::start
      :count (+ 1 ai-count)
+     :zoom 2
      :position (vec (cons (/ size 2) ai-position))
      :diameter (vec (cons 20 ai-diameter))
      :color (vec (cons [255 255 255] ai-color))
@@ -39,7 +40,7 @@
 (defn soa->aos [game] ;https://www.youtube.com/watch?v=ZHqFrNyLlpA
   (reduce-kv #(mapv (fn [struct value] (assoc struct %2 value)) %1 %3)
              (repeat (:count game) {})
-             (dissoc game :state :count)))
+             (dissoc game :state :count :zoom)))
 
 (defn growth-matrix [{:keys [position diameter count]}]
   (m/compute-matrix [count count]
@@ -88,8 +89,15 @@
   (apply q/fill c)
   (q/ellipse x y d d))
 
-(defn draw! [{:keys [state position] :as game}]
-  (q/with-translation (- screen-center (position 0))
+(defn draw! [{:keys [state zoom] [player-position _] :position :as game}]
+  ;zoom!
+  (q/push-matrix)
+  (q/translate (screen-center 0) (screen-center 1))
+  (q/scale zoom)
+  (q/translate (- (screen-center 0))
+               (- (screen-center 1)))
+  ;in-game!
+  (q/with-translation (- screen-center player-position)
     ;grid!
     (q/background 30)
     (q/stroke 255)
@@ -99,10 +107,20 @@
     ;cells!
     (doall (map cell! (sort-by :diameter (soa->aos game)))))
   ;screen!
+  (q/pop-matrix)
   (when-not (= state ::active)
     (q/fill 0 255 0)
     (q/text-size 20)
-    (q/text (str state) 5 20)))
+    (q/text (str state) 5 20)
+    ;helpers!
+    (let [mouse [(q/mouse-x) (q/mouse-y)]]
+      ;distance!
+      (q/stroke 255 155 0)
+      (q/line (screen-center 0) (screen-center 1) (mouse 0) (mouse 1))
+      (q/text-size 20)
+      (q/fill 255 155 0)
+      (q/text (str (/ (m/distance mouse screen-center) zoom))
+              5 (- screen-height 10)))))
 
 (defn player-rotates [game {:keys [x y]}]
   (if (isa? (:state game) ::active)
@@ -134,7 +152,7 @@
       game)))
 
 (q/defsketch agar.io
-  :size [width height]
+  :size [screen-width screen-height]
   :setup new-game
   :update step
   :draw draw!
