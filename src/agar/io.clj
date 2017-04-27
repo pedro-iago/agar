@@ -17,56 +17,59 @@
                       [::game-over ::start]})
 
 (def ^:const game-size 500)
-(def ^:const width 1000)
-(def ^:const height 1000)
-(def ^:const center (/ [width height] 2))
+(def ^:const screen-width 1000)
+(def ^:const screen-height 1000)
+(def ^:const screen-center (/ [screen-width screen-height] 2))
 (def ^:const speed 50)
 (def ^:const growth (/ 5))
 
 (defn new-game []
   (let [size [game-size game-size]
-        ai# 20
-        ai-diameter (repeatedly ai# #(+ (rand 12) 10))
-        ai-position (repeatedly ai# #(mapv rand size))
-        ai-color (repeatedly ai# #(mapv rand [255 255 255]))]
+        ai-count 20
+        ai-diameter (repeatedly ai-count #(+ (rand 12) 10))
+        ai-position (repeatedly ai-count #(mapv rand size))
+        ai-color (repeatedly ai-count #(mapv rand [255 255 255]))]
     {:state ::start
-     :count (+ 1 ai#)
+     :count (+ 1 ai-count)
      :position (vec (cons (/ size 2) ai-position))
      :diameter (vec (cons 20 ai-diameter))
      :color (vec (cons [255 255 255] ai-color))
-     :versor (m/zero-matrix (+ 1 ai#) 2)}))
+     :versor (m/zero-matrix (+ 1 ai-count) 2)}))
 
 (defn soa->aos [game] ;https://www.youtube.com/watch?v=ZHqFrNyLlpA
-  (reduce-kv #(mapv (fn [s v] (assoc s %2 v)) %1 %3)
+  (reduce-kv #(mapv (fn [struct value] (assoc struct %2 value)) %1 %3)
              (repeat (:count game) {})
              (dissoc game :state :count)))
 
-(defn compare-cell [px dx py dy] ;todo: use distance-matrix
-  (let [distance² (m/magnitude-squared (- px py))
-        metrics (* (- dy dx) (+ dy dx) 0.25)]
-    (cond
-      (> metrics distance²) (- dx)
-      (> (- metrics) distance²) (* dy growth)
-      :else 0)))
+(defn growth-matrix [{:keys [position diameter count]}]
+  (m/compute-matrix [count count]
+    #(let [distance² (m/magnitude-squared (- (position %2) (position %1)))
+           coverage (* (- (diameter %2) (diameter %1))
+                       (+ (diameter %2) (diameter %1))
+                       0.25)]
+      (cond
+        (> coverage distance²) (- (diameter %1))
+        (> (- coverage) distance²) (* (diameter %2) growth)
+        :else 0))))
 
-(defn growth-matrix [{p :position d :diameter n :count}] ;slow
-  (m/compute-matrix [n n] #(compare-cell (p %1) (d %1) (p %2) (d %2))))
+(defn error-matrix [{:keys [position diameter count]}]
+  (m/compute-matrix [count count]
+    #(let [distance-vector (- (position %2) (position %1))
+           distance² (m/magnitude-squared distance-vector)]
+      (* (diameter %2)
+         (/ distance-vector (+ distance² 1))
+         (- (diameter %1) (diameter %2))))))
 
-(defn error-matrix [{p :position d :diameter n :count}] ;slow
-  (m/compute-matrix [n n]
-    #(let [Δ (- (p %2) (p %1)) Δ² (m/magnitude-squared Δ)]
-      (* (d %2) (/ Δ (+ Δ² 1)) (- (d %1) (d %2))))))
-
-(defn check [{d :diameter :as new} {vo :versor :as old}] ;tied: step
+(defn check [{:keys [diameter] :as new} {:keys [versor] :as old}]
   (-> new
       ;assure rotation
-      (assoc-in [:versor 0] (vo 0))
+      (assoc-in [:versor 0] (versor 0))
       ;walls
       (update :position m/clamp 0 game-size)
       ;state management
-      (cond-> (<= (d 0) 0) (assoc :state ::game-over))))
+      (cond-> (<= (diameter 0) 0) (assoc :state ::game-over))))
 
-(defn step [{:keys [state position diameter versor] :as game}] ;frame
+(defn step [{:keys [state position diameter versor] :as game}]
   (if (isa? state ::active)
     (-> game
         ;training
@@ -75,7 +78,7 @@
         ;movement
         (update :position + (mapv * (/ speed (+ diameter 1)) versor))
         ;resize
-        (update :diameter + (mapv m/esum (growth-matrix game)))
+        (update :diameter + (mapv #(reduce + %) (growth-matrix game)))
         ;validate
         (check game))
     game))
@@ -86,13 +89,13 @@
   (q/ellipse x y d d))
 
 (defn draw! [{:keys [state position] :as game}]
-  (q/with-translation (- center (position 0))
-    ;grid
+  (q/with-translation (- screen-center (position 0))
+    ;grid!
     (q/background 30)
     (q/stroke 255)
-    (doseq [l (range 0 (+ game-size 0.1) (* width 0.05))]
-      (q/line l 0 l game-size)
-      (q/line 0 l game-size l))
+    (doseq [bar (range 0 (+ game-size 0.1) (* screen-width 0.05))]
+      (q/line bar 0 bar game-size)
+      (q/line 0 bar game-size bar))
     ;cells!
     (doall (map cell! (sort-by :diameter (soa->aos game)))))
   ;screen!
@@ -103,7 +106,7 @@
 
 (defn player-rotates [game {:keys [x y]}]
   (if (isa? (:state game) ::active)
-    (assoc-in game [:versor 0] (m/normalise (- [x y] center)))
+    (assoc-in game [:versor 0] (m/normalise (- [x y] screen-center)))
     game))
 
 (defn pause [game _]
@@ -116,12 +119,19 @@
     (assoc game :state ::active)
     game))
 
-(defn io-handle [game {key :key-code}] ;todo: start-menu, spacebar action
+(defn io-handle [game {key :key-code}] ;todo: start-menu, spacebar leap
   (case (:state game)
         ::active (case key 10 (assoc game :state ::pause) game)
         ::pause (case key 10 (assoc game :state ::active) game)
         ::start (case key 10 (assoc game :state ::active) game)
         ::game-over (case key 10 (new-game)) game))
+
+(defn cycle-state [game _] ;todo*: bound transition to certain action
+  (let [transit-map (group-by first (s/form ::transition))
+        transit-set (-> game :state transit-map set)]
+    (if (= (count transit-set) 1)
+      (assoc game :state (-> transit-set first second))
+      game)))
 
 (q/defsketch agar.io
   :size [width height]
@@ -132,5 +142,5 @@
   :mouse-exited pause
   :mouse-entered unpause
   :key-pressed io-handle
-  :mouse-pressed (fn [game _] (assoc game :state ::game-over))
+  :mouse-pressed cycle-state
   :middleware [qm/fun-mode])
