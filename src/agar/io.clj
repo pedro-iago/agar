@@ -24,8 +24,8 @@
 (def ^:const screen-center (/ [screen-width screen-height] 2))
 (def ^:const speed 50)
 (def ^:const growth (/ 5))
-(def ^:const quad-level 4)
-(def ^:const quad-size (/ game-size (m/pow 4 quad-level)))
+(def ^:const quad-level 16)
+(def ^:const quad-size (/ game-size quad-level))
 
 (defn new-game []
   (let [size [game-size game-size]
@@ -53,8 +53,9 @@
                                  (update %1 0 - %2)
                                  (update %1 1 - %2))
                           position (/ diameter 2))
-        quads-ext (m/ceil (/ (vec extremety) quad-size))]
-    (reduce-kv #(update %1 %3 conj (quot %2 4)) {} quads-ext)))
+        quads-ext (m/floor (/ (vec extremety) quad-size))
+        quad-tree (reduce-kv #(update %1 %3 conj (quot %2 4)) {} quads-ext)]
+    (zipmap (keys quad-tree) (map set (vals quad-tree)))))
 
 (defn growth-matrix [{:keys [position diameter count]}]
   (m/compute-matrix [count count]
@@ -117,9 +118,18 @@
       ;grid!
       (q/background 30)
       (q/stroke 255)
-      (doseq [bar (range 0 (+ game-size 0.1) (* screen-width 0.05))]
+      (doseq [bar (range 0 (+ game-size 0.1) quad-size)]
         (q/line bar 0 bar game-size)
         (q/line 0 bar game-size bar))
+      (when (isa? state ::spectation)
+        ;quad-tree!
+        (q/no-fill)
+        (q/stroke 255 0 0)
+        (doall (map #(q/rect (* (% 0) quad-size)
+                             (* (% 1) quad-size)
+                             quad-size
+                             quad-size)
+                    (keys (quad3 game)))))
       ;cells!
       (doall (map cell! (sort-by :diameter (soa->aos game))))))
   (q/pop-matrix)
