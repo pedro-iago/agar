@@ -1,8 +1,8 @@
 (defproject agar "0.0.0"
   :description "agar.io and evolutions"
   :dependencies [[org.clojure/clojure "1.9.0-alpha14"]
-                 [net.mikera/core.matrix "0.54.0"]
-                 [net.mikera/vectorz-clj "0.45.0"]
+                 [net.mikera/core.matrix "0.58.0"]
+                 [net.mikera/vectorz-clj "0.46.0"]
                  [quil "2.5.0"]]
   :profiles {:dev {:source-paths ["src" "test"]
                    :dependencies [[org.clojure/test.check "0.9.0"]

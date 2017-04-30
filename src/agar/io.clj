@@ -18,32 +18,47 @@
                       [::active ::game-over]
                       [::game-over ::start]})
 
-(def ^:const game-size 500)
+(def ^:const game-size 300)
 (def ^:const screen-width 1000)
 (def ^:const screen-height 1000)
 (def ^:const screen-center (/ [screen-width screen-height] 2))
 (def ^:const speed 50)
 (def ^:const growth (/ 5))
+(def ^:const eps 10)
 
+;todo: read this from a file
 (defn new-game []
   (let [size [game-size game-size]
-        ai-count 20
-        ai-diameter (repeatedly ai-count #(+ (rand 12) 10))
-        ai-position (repeatedly ai-count #(mapv rand size))
-        ai-color (repeatedly ai-count #(mapv rand [255 255 255]))]
+        ;counts
+        food-count 10
+        virus-count 2
+        ai-count 5
+        total-count (+ food-count virus-count ai-count 1)
+        ;diameters
+        food-diameter (repeat food-count 10)
+        virus-diameter (repeat virus-count -25)
+        ai-diameter (repeatedly ai-count #(+ (rand 20) 10))
+        ;colors
+        food-color (repeat food-count [255 255 0])
+        virus-color (repeat virus-count [0 255 0])
+        ai-color (repeatedly ai-count #(mapv rand [255 0 255]))
+        ;all but player
+        rest-position (repeatedly (dec total-count) #(mapv rand size))
+        rest-diameter (concat ai-diameter food-diameter virus-diameter)
+        rest-color (concat ai-color food-color virus-color)]
     {:state ::start
-     :count (+ 1 ai-count)
+     :count total-count
      :zoom 2
-     :viewpoint (cycle (range (+ ai-count 1)))
-     :position (vec (cons (/ size 2) ai-position))
-     :diameter (vec (cons 20 ai-diameter))
-     :color (vec (cons [255 255 255] ai-color))
-     :versor (m/zero-matrix (+ 1 ai-count) 2)}))
+     :view (cycle (range total-count))
+     :position (vec (cons (/ size 2) rest-position))
+     :diameter (vec (cons 20 rest-diameter))
+     :color (vec (cons [255 255 255] rest-color))
+     :versor (m/zero-matrix total-count 2)}))
 
 (defn soa->aos [game] ;https://www.youtube.com/watch?v=ZHqFrNyLlpA
   (reduce-kv #(mapv (fn [struct value] (assoc struct %2 value)) %1 %3)
              (repeat (:count game) {})
-             (dissoc game :state :count :zoom)))
+             (dissoc game :state :count :zoom :view)))
 
 (defn growth-matrix [{:keys [position diameter count]}]
   (m/compute-matrix [count count]
@@ -60,18 +75,26 @@
   (m/compute-matrix [count count]
     #(let [distance-vector (- (position %2) (position %1))
            distance² (m/magnitude-squared distance-vector)]
-      (* (diameter %2)
-         (- (diameter %1) (diameter %2))
-         (/ distance-vector (+ distance² 1))))))
+      (+ (* (cond-> (diameter %2) (neg? (diameter %2)) (/ eps))
+            (- (diameter %1) (diameter %2))
+            (/ distance-vector (+ distance² 1) 100))
+         (/ (- [(rand) (rand)] 0.5) 1000)))))
 
-(defn check [{:keys [diameter] :as new} {:keys [versor] :as old}]
-  (-> new
-      ;assure rotation
-      (assoc-in [:versor 0] (versor 0))
-      ;walls
-      (update :position m/clamp 0 game-size)
-      ;state management
-      (cond-> (<= (diameter 0) 0) (assoc :state ::game-over))))
+(defn check [{:keys [diameter] :as new} {:keys [versor] [player] :view :as old}]
+  (let [active (mapv #(if (> % eps) 1 0) diameter)]
+    (-> new
+        ;walls
+        (update :position m/clamp 0 game-size)
+        ;state management
+        (cond->
+          ;assure rotation
+          (= (:state old) ::active)
+          (assoc-in [:versor player] (versor player))
+          ;game-over clause
+          (or (<= (diameter player) eps) (= (reduce + active) 1))
+          (assoc :state ::game-over))
+        ;freeze zeros
+        (update :versor #(mapv * %1 %2) active))))
 
 (defn step [{:keys [state position diameter versor] :as game}]
   (if (isa? state ::active)
@@ -92,25 +115,23 @@
   (apply q/fill c)
   (q/ellipse x y d d))
 
-(defn draw! [{:keys [state zoom viewpoint position] :as game}]
+(defn draw! [{:keys [state zoom view position] :as game}]
   ;zoom!
   (q/push-matrix)
   (q/translate (screen-center 0) (screen-center 1))
   (q/scale zoom)
   (q/translate (- (screen-center 0))
                (- (screen-center 1)))
-  ;viewpoint!
-  (let [view (if (isa? state ::spectation) (first viewpoint) 0)]
-    ;in-game!
-    (q/with-translation (- screen-center (position view))
-      ;grid!
-      (q/background 30)
-      (q/stroke 255)
-      (doseq [bar (range 0 (+ game-size 0.1) (* screen-width 0.05))]
-        (q/line bar 0 bar game-size)
-        (q/line 0 bar game-size bar))
-      ;cells!
-      (doall (map cell! (sort-by :diameter (soa->aos game))))))
+  ;in-game!
+  (q/with-translation (- screen-center (-> view first position))
+    ;grid!
+    (q/background 30)
+    (q/stroke 255)
+    (doseq [bar (range 0 (+ game-size eps) (* screen-width 0.05))]
+      (q/line bar 0 bar game-size)
+      (q/line 0 bar game-size bar))
+    ;cells!
+    (doall (map cell! (sort-by :diameter (soa->aos game)))))
   (q/pop-matrix)
   ;status!
   (when-not (= state ::active)
@@ -128,9 +149,9 @@
       (q/text (str (/ (m/distance mouse screen-center) zoom))
               5 (- screen-height 10)))))
 
-(defn player-rotates [game {:keys [x y]}]
+(defn player-rotates [{[player] :view :as game} {:keys [x y]}]
   (if (= (:state game) ::active)
-    (assoc-in game [:versor 0] (m/normalise (- [x y] screen-center)))
+    (assoc-in game [:versor player] (m/normalise (- [x y] screen-center)))
     game))
 
 (defn pause [game _]
@@ -143,22 +164,27 @@
     (assoc game :state ::active)
     game))
 
-(defn key-handle [game {key :key-code}] ;todo: start-menu, spacebar leap
-  (case (:state game)
-        ::active (case key 10 (assoc game :state ::pause) game)
-        ::pause (case key 10 (assoc game :state ::active) game)
-        ::start (case key 10 (assoc game :state ::active) game)
-        ::game-over (case key 10 (new-game)) game))
-
-(defn click-handle [{:keys [state viewpoint] :as game} _]
-  (cond-> game
-    true (update :viewpoint next)
-    (isa? state ::active) (assoc :state ::game-over)))
+(defn switch-player
+  ([{:keys [diameter] [player] :view :as game}]
+   (if (<= (diameter player) eps)
+     (recur (update game :view next))
+     game))
+  ([game _]
+   (if (isa? (:state game) ::spectation)
+     (switch-player (update game :view next))
+     game)))
 
 (defn zoom-wheel [game spin]
   (if (isa? (:state game) ::spectation)
     (update game :zoom + (* spin 0.1))
     game))
+
+(defn key-handle [game {key :key-code}] ;todo: start-menu, spacebar leap
+  (case (:state game)
+        ::active (case key 10 (assoc game :state ::game-over) game)
+        ::pause (case key 10 (assoc game :state ::active) game)
+        ::start (case key 10 (assoc game :state ::active) game)
+        ::game-over (case key 10 (new-game)) game))
 
 (q/defsketch agar.io
   :size [screen-width screen-height]
@@ -168,7 +194,7 @@
   :mouse-moved player-rotates
   :mouse-exited pause
   :mouse-entered unpause
-  :key-pressed key-handle
-  :mouse-pressed click-handle
+  :mouse-pressed switch-player
   :mouse-wheel zoom-wheel
-  :middleware [qm/fun-mode])
+  :key-pressed key-handle
+  :middleware [qm/pause-on-error qm/fun-mode])
