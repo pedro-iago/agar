@@ -4,7 +4,8 @@
             [quil.core :as q]
             [quil.middleware :as qm]
             [clojure.core.matrix :as m])
-  (:use [clojure.core.matrix.operators :only [+ - * /]]))
+  (:use [clojure.core.matrix.operators :only [+ - * /]])
+  (:gen-class))
 
 (derive ::start ::frozen)
 (derive ::start ::spectation)
@@ -184,17 +185,20 @@
         ::active (case key 10 (assoc game :state ::game-over) game)
         ::pause (case key 10 (assoc game :state ::active) game)
         ::start (case key 10 (assoc game :state ::active) game)
-        ::game-over (case key 10 (new-game)) game))
+        ::game-over (case key 10 (new-game) game)))
 
-(q/defsketch agar.io
-  :size [screen-width screen-height]
-  :setup new-game
-  :update step
-  :draw draw!
-  :mouse-moved player-rotates
-  :mouse-exited pause
-  :mouse-entered unpause
-  :mouse-pressed switch-player
-  :mouse-wheel zoom-wheel
-  :key-pressed key-handle
-  :middleware [qm/pause-on-error qm/fun-mode])
+(defn -main [& args]
+  (q/sketch
+    :title "agar.io"
+    :size [screen-width screen-height]
+    :setup new-game
+    :update step
+    :draw draw!
+    :mouse-moved player-rotates
+    :mouse-exited pause
+    :mouse-entered unpause
+    :mouse-pressed switch-player
+    :mouse-wheel zoom-wheel
+    :key-pressed key-handle
+    :middleware [qm/pause-on-error qm/fun-mode]
+    :features [:exit-on-close]))
