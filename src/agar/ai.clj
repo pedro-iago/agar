@@ -6,7 +6,7 @@
             [push.core :as push]))
 
 (s/def ::complex (s/map-of #{:re :im} number?))
-(s/def ::circle (s/cat ::position ::complex ::radius number?))
+(s/def ::circle (s/tuple ::complex number?))
 (s/def ::capture
   (s/fspec :args (s/cat :you ::circle :him ::circle)
            :ret (s/or :eaten #{-1} :noop #{0} :ate #{1})))
@@ -55,23 +55,20 @@
           (push/known-instructions (push/interpreter)))
 
 ;interpreter
-(def bindings {:you.position (map->Complex (you 0))
-               :you.radius (you 1)
-               :him.position (map->Complex (him 0))
-               :him.radius (him 1)}) ;destructuring seems a problem
-
 (def instructions
-  #{:complex-norm
-    :complex-subtract
+  #{:scalar-compare ;new
     :scalar-add
     :scalar-sub
     :scalar-mult
-    :scalar-storestack ;to grow the bindings (todo)
+    :scalar-liftstack
+    :scalar-return
     :scalar>?
     :scalar<?
+    :complex-norm
+    :complex-subtract
     :exec-if
-    :code-quote
-    :code-do})
+    :code-do
+    0})
 
 (def scalar-compare
   (build-instruction "scalar-compare"
@@ -87,17 +84,23 @@
       (i/register-instruction scalar-compare)))
 
 ;unit test
-(def program-0 '(:you.radius :him.radius :scalar-add
-                 :you.position :him.position :complex-subtract :complex-norm
-                 :scalar>?
-                 :code-quote '(:you.radius :him.radius :scalar-compare)
-                 :exec-if
-                 :code-do
-                 0))
+(def program-0
+  (concat
+    (update you 0 map->Complex) ;need to manually type it
+    (update him 0 map->Complex)
+    '(0
+      :scalar-liftstack
+      :scalar-add
+      :complex-subtract
+      :complex-norm
+      :scalar>?
+      :exec-if
+      :scalar-compare
+      0
+      :scalar-return)))
 
-(-> interpreter ;that's capture-0 (minus destructuring)
-    (push/run program-0 1000 :bindings bindings)
-    (push/get-stack :scalar)
-    first)
+(-> interpreter ;that's capture-0!
+    (push/run program-0 1000)
+    (push/get-stack :return))
 
 ;genetic programing (TO BE CONTINUED...)
