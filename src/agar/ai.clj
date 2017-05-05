@@ -12,8 +12,8 @@
            :ret (s/or :eaten #{-1} :noop #{0} :ate #{1})))
 
 ;unit test
-(def you [{:re 3 :im 0} 5.01])
-(def him [{:re 0 :im 0} 4.00])
+(def you [{:re 3 :im 0} 4.00])
+(def him [{:re 0 :im 0} 5.01])
 
 (defn capture-0 [[{xa :re ya :im} ra] [{xb :re yb :im} rb]]
   (let [Δ (m/distance [xa ya] [xb yb])]
@@ -51,15 +51,16 @@
 ;https://github.com/Vaguery/klapaucius
 ;https://github.com/lspector/Clojush/wiki
 
-(sequence (filter #(re-matches #"code(.*)" (subs (str %) 1)))
-          (push/known-instructions (push/interpreter)))
+(count
+  (sequence (filter #(re-matches #"scalar(.*)" (subs (str %) 1)))
+          (push/known-instructions (push/interpreter))))
 
 ;interpreter
 (def instructions
   #{:scalar-compare ;new
     :scalar-add
-    :scalar-sub
-    :scalar-mult
+    :scalar-subtract
+    :scalar-multiply
     :scalar-liftstack
     :scalar-return
     :scalar>?
@@ -84,23 +85,105 @@
       (i/register-instruction scalar-compare)))
 
 ;unit test
+(def args
+  (concat (update you 0 map->Complex)
+          (update him 0 map->Complex)))
+
 (def program-0
-  (concat
-    (update you 0 map->Complex) ;need to manually type it
-    (update him 0 map->Complex)
-    '(0
-      :scalar-liftstack
-      :scalar-add
-      :complex-subtract
-      :complex-norm
-      :scalar>?
-      :exec-if
-      :scalar-compare
-      0
-      :scalar-return)))
+  '(0
+    :scalar-liftstacks
+    :scalar-add
+    :complex-subtract
+    :complex-norm
+    :scalar>?
+    :exec-if
+    :scalar-compare
+    0
+    :scalar-return))
 
 (-> interpreter ;that's capture-0!
-    (push/run program-0 1000)
+    (push/run (concat args program-0) 1000)
     (push/get-stack :return))
 
-;genetic programing (TO BE CONTINUED...)
+(def program-1
+  '(0
+    :scalar-liftstack
+    :scalar-add
+    :scalar->code
+    :scalar-subtract
+    :code-do
+    :scalar-multiply
+    :complex-subtract
+    :complex-norm
+    2
+    :scalar-power
+    0
+    :scalar-liftstack
+    :scalar>?
+    :exec-if
+    1
+    '(:scalar-add 0 :scalar<? :exec-if -1 0)
+    :scalar-return))
+
+(-> interpreter ;that's capture-1!
+    (push/run (concat args program-1) 1000)
+    (push/get-stack :return))
+
+;genetic programing (DRAFT)
+
+;spec example (how to spec a program?)
+(def spec (s/cat :0 int? :1 (s/alt :0 nil? :1 string?) :2 int?))
+(def data [1 'foo 0])
+
+(defn score [spec data] ;https://www.youtube.com/watch?v=xvk-Gnydn54
+  (if-let [explain-data (s/explain-data spec data)]
+    (-> explain-data
+        ::s/problems
+        first
+        :path
+        first
+        str
+        (subs 1)
+        read-string)
+    100))
+
+(score spec data)
+
+;see push data, try to spec
+(sequence
+  (map first)
+  (s/exercise instructions 10))
+
+(def program-0ish
+  '(0
+    :complex-subtract ;4 equivalent permutations
+    :scalar-liftstack
+    :scalar-add
+    :complex-norm
+    :scalar>?
+    :exec-if
+    :scalar-compare
+    0
+    :scalar-return))
+
+;permutations
+(require '[clojure.math.combinatorics :as combo])
+
+(def run-push
+  (comp (random-sample 0.001)
+        (take 1000)
+        (map #(push/run interpreter (concat args %) 1000))
+        (map #(push/get-stack % :return))
+        (map first)
+        (filter #{-1 0 1})))
+
+(defn fitness [program]
+  (->> (combo/permutations program)
+       (sequence run-push)
+       frequencies))
+
+(fitness program-0)
+
+(fitness program-1)
+
+;(defn random-program [instructions-set])
