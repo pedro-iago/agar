@@ -272,7 +272,7 @@
          '[clojure.set :refer [union subset?]])
 
 (def ^:dynamic seq-prob 0.3)
-(def ^:dynamic sub-prob 0.5)
+(def ^:dynamic sub-prob 0.1)
 
 (defn rand-sub [coll]
   (->> (combo/count-subsets coll)
@@ -302,8 +302,6 @@
 (def ^:dynamic new-node-prob 0.05)
 
 (defn mutable? [node]
-  (or (s/valid? ::program))
-
   (or (when (seq? node)
         (contains? (union (set `[s/+ s/*]) #{'clojure.spec/spec})
                    (first node)))
@@ -345,7 +343,7 @@
 
 (require '[clojure.pprint :refer [write]])
 
-(defn -main [pop-size max-gen tournament-size test-number]
+(defn evolve [pop-size max-gen tournament-size test-data]
   (spit "event.log" (str \newline \newline
                          ":Timestamp " (java.util.Date.)
                          " :seq-prob " seq-prob
@@ -358,28 +356,32 @@
                          " :tournament-size " tournament-size
                          \newline)
         :append true)
-  (let [test-data (case 0 program-0 1 program-1 2 program-2)]
-    (loop [n max-gen
-           creatures (initial-population pop-size (count test-data))]
-      (let [scored-creatures (map #(assoc % :score (score (eval (:program %)) test-data))
-                                  creatures)
-            is-time-to-log (zero? (mod (- max-gen n) (quot max-gen 10)))]
-       (if (or (zero? n) (perfect-fit scored-creatures))
-         (let [winner (:program (second scored-creatures))
-               result (s/conform (eval winner) test-data)]
-           (spit "event.log" (str (write result :pretty true :stream nil) \newline) :append true)
-           (spit "event.log" (write winner :pretty true :stream nil) :append true)
-           scored-creatures)
-         (let [elites (take 2 (reverse (sort-by :score scored-creatures)))
-               new-creatures (for [i (range (- (count creatures) 2))]
-                               ;; add a random node to improve diversity
-                               (if (< (rand) new-node-prob)
-                                 {:program (rand-cat instructions (count test-data))}
-                                 (let [creature1 (select-best scored-creatures tournament-size)
-                                       creature2 (select-best scored-creatures tournament-size)]
-                                   (mutate (crossover creature1 creature2)))))]
-           (when is-time-to-log
-             (spit "event.log" (str ":generation " (- max-gen n) \newline
-                                    ":best-scores " (mapv :score elites) \newline)
-                   :append true))
-           (recur (dec n) (vec (into new-creatures elites)))))))))
+  (loop [n max-gen
+         creatures (initial-population pop-size (count test-data))]
+    (let [scored-creatures (map #(assoc % :score (score (eval (:program %)) test-data))
+                                creatures)
+          is-time-to-log (zero? (mod (- max-gen n) (quot max-gen 10)))]
+     (if (or (zero? n) (perfect-fit scored-creatures))
+       (let [winner (:program (second scored-creatures))
+             result (s/conform (eval winner) test-data)]
+         (spit "event.log" (str (write result :pretty true :stream nil) \newline) :append true)
+         (spit "event.log" (write winner :pretty true :stream nil) :append true)
+         scored-creatures)
+       (let [elites (take 2 (reverse (sort-by :score scored-creatures)))
+             new-creatures (for [i (range (- (count creatures) 2))]
+                             ;; add a random node to improve diversity
+                             (if (< (rand) new-node-prob)
+                               {:program (rand-cat instructions (count test-data))}
+                               (let [creature1 (select-best scored-creatures tournament-size)
+                                     creature2 (select-best scored-creatures tournament-size)]
+                                 (mutate (crossover creature1 creature2)))))]
+         (when is-time-to-log
+           (spit "event.log" (str ":generation " (- max-gen n) \newline
+                                  ":best-scores " (mapv :score elites) \newline)
+                 :append true))
+         (recur (dec n) (vec (into new-creatures elites))))))))
+
+(defn -main [& args]
+  (let [[pop-size max-gen tournament-size test-number] (map read-string args)
+        test-data (case test-number 0 program-0 1 program-1 2 program-2)]
+    (evolve pop-size max-gen tournament-size test-data)))
