@@ -4,8 +4,7 @@
             [quil.core :as q]
             [quil.middleware :as qm]
             [clojure.core.matrix :as m])
-  (:use [clojure.core.matrix.operators :only [+ - * /]])
-  (:gen-class))
+  (:use [clojure.core.matrix.operators :only [+ - * /]]))
 
 (derive ::start ::frozen)
 (derive ::start ::spectation)

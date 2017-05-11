@@ -13,6 +13,6 @@
                                   [proto-repl-sayid "0.1.3"]
                                   [org.clojure/math.combinatorics "0.1.4"]]}}
   :aot [agar.io agar.ai]
-  :main agar.io
+  :main agar.ai
   :source-paths ["src"]
   :test-paths ["test"])
