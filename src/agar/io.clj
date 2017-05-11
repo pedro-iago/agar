@@ -1,6 +1,6 @@
 (ns agar.io
   (:refer-clojure :exclude [+ - * /])
-  (:require [clojure.spec :as s]
+  (:require [clojure.spec.alpha :as s]
             [quil.core :as q]
             [quil.middleware :as qm]
             [clojure.core.matrix :as m])

@@ -1,6 +1,6 @@
 (defproject agar "0.0.0"
   :description "agar.io and evolutions"
-  :dependencies [[org.clojure/clojure "1.9.0-alpha14"]
+  :dependencies [[org.clojure/clojure "1.9.0-alpha16"]
                  [net.mikera/core.matrix "0.58.0"]
                  [net.mikera/vectorz-clj "0.46.0"]
                  [quil "2.5.0"]
